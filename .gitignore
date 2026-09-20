@@ -1,0 +1,19 @@
+# Frontend dependencies and build output
+frontend/node_modules/
+frontend/dist/
+
+# Python environment and cache
+backend/venv/
+backend/__pycache__/
+*.py[cod]
+
+# Environment and local secrets
+.env
+backend/.env
+frontend/.env
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
