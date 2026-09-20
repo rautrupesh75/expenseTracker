@@ -86,6 +86,9 @@ export default function App() {
   const [editingRow, setEditingRow] = useState(null);
   const [inputAmount, setInputAmount] = useState('');
   const [inputDate, setInputDate] = useState('');
+  const [notesExpense, setNotesExpense] = useState(null);
+  const [notesInput, setNotesInput] = useState('');
+  const [savingNotes, setSavingNotes] = useState(false);
   const [copiedRef, setCopiedRef] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
@@ -147,7 +150,8 @@ export default function App() {
           [item.expense_id]: {
             amount: item.amount,
             date: item.payment_date,
-            status: item.status
+            status: item.status,
+            notes: item.notes || ''
           }
         };
       }
@@ -432,6 +436,45 @@ export default function App() {
     setInputDate(defaultDate);
   };
 
+  const handleOpenNotes = (exp) => {
+    const payment = payments[periodKey]?.[exp.id];
+    if (!payment) {
+      alert('Record the payment before adding notes.');
+      return;
+    }
+    setNotesExpense(exp);
+    setNotesInput(payment.notes || '');
+  };
+
+  const handleSaveNotes = async () => {
+    if (!notesExpense) return;
+    const payment = payments[periodKey]?.[notesExpense.id];
+    if (!payment) return;
+
+    setSavingNotes(true);
+    try {
+      const response = await fetch('/api/payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expense_id: notesExpense.id,
+          expense_year: selectedYear,
+          expense_month: selectedMonth,
+          payment_date: payment.date,
+          amount: Number(payment.amount),
+          notes: notesInput.trim() || null
+        })
+      });
+      if (!response.ok) throw new Error('Notes could not be saved.');
+      await loadDashboard();
+      setNotesExpense(null);
+    } catch (error) {
+      alert(error.message);
+    } finally {
+      setSavingNotes(false);
+    }
+  };
+
   const handleSavePayment = async (expId) => {
     const amt = parseFloat(inputAmount);
     if (isNaN(amt) || amt <= 0) {
@@ -442,6 +485,7 @@ export default function App() {
       alert('Please select a payment date.');
       return;
     }
+    const existingPayment = payments[periodKey]?.[expId];
     try {
       const response = await fetch('/api/payments', {
         method: 'POST',
@@ -451,7 +495,8 @@ export default function App() {
           expense_year: selectedYear,
           expense_month: selectedMonth,
           payment_date: inputDate,
-          amount: amt
+          amount: amt,
+          notes: existingPayment?.notes || null
         })
       });
       if (!response.ok) throw new Error('Payment could not be saved.');
@@ -830,6 +875,7 @@ export default function App() {
                             ) : (
                               <div className="flex justify-end gap-2">
                                 <button onClick={() => handleStartEdit(exp)} className="text-blue-500 hover:underline">{isPaid ? 'Edit' : 'Record'}</button>
+                                <button onClick={() => handleOpenNotes(exp)} className="text-slate-400 hover:text-blue-400">Notes</button>
                                 <button onClick={() => handleDeleteExpense(exp.id)} className="text-slate-500 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
                               </div>
                             )}
@@ -963,6 +1009,39 @@ export default function App() {
                 <button type="submit" className="px-4 py-1.5 bg-blue-600 text-white rounded font-bold">Save Row</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {notesExpense && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="w-full max-w-md p-6 rounded-2xl border bg-slate-900 border-slate-800 text-slate-100">
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <h3 className="font-bold text-sm">Payment Notes</h3>
+                <p className="text-xs text-slate-500 mt-1">{notesExpense.name} · {periodKey}</p>
+              </div>
+              <button onClick={() => setNotesExpense(null)} className="text-slate-400 hover:text-white" aria-label="Close notes dialog">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <textarea
+              value={notesInput}
+              onChange={event => setNotesInput(event.target.value)}
+              maxLength={500}
+              rows={5}
+              placeholder="Add a receipt number, reminder, or payment detail..."
+              className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <div className="flex justify-between items-center pt-2">
+              <span className="text-[11px] text-slate-500">{notesInput.length}/500</span>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setNotesExpense(null)} className="px-3 py-1.5 border border-slate-700 rounded-lg text-xs text-slate-400">Cancel</button>
+                <button type="button" disabled={savingNotes} onClick={handleSaveNotes} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold">
+                  {savingNotes ? 'Saving...' : 'Save notes'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
