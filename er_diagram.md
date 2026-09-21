@@ -1,83 +1,97 @@
 # Personal Monthly Expense Tracker -- Database ER Diagram
 
-This document contains the Entity Relationship Diagram (ERD) and relational schema specification for the Personal Monthly Expense Tracker.
-
-## 1. Visual Entity Relationship Diagram (Mermaid)
+This ERD is synchronized with `backend/schema.sql`, which is the executable
+database definition for the generated application.
 
 ```mermaid
 erDiagram
     EXPENSE_CATEGORY ||--o{ EXPENSE_MASTER : classifies
-    EXPENSE_MASTER ||--o{ EXPENSE_PAYMENT : tracks
+    EXPENSE_MASTER ||--o{ EXPENSE_PAYMENT : records
 
     EXPENSE_CATEGORY {
-        int category_id PK "Auto Increment"
-        varchar(100) category_name "Unique name"
-        int display_order "Sort weight"
+        int category_id PK
+        varchar category_name UK
+        int display_order
         datetime created_at
         datetime updated_at
     }
 
     EXPENSE_MASTER {
-        bigint expense_id PK "Auto Increment"
-        int category_id FK "Nullable, classifies expense"
-        varchar(150) expense_name "Name of bill or expense"
-        varchar(50) expense_code "Unique slug / identifier"
-        enum frequency_type "MONTHLY, BI_MONTHLY, QUARTERLY, etc."
-        json applicable_months "Array e.g. [2, 5, 8, 11]"
-        varchar(50) payment_channel "WEB, APP, UPI, OFFLINE, NA"
-        varchar(1000) payment_url "Direct payment / portal link"
-        varchar(100) account_reference "Consumer ID, Card #, Policy #"
-        tinyint expected_due_day "Day of month (1-31)"
-        decimal estimated_amount "Planned budget benchmark"
-        boolean active_flag "Active or Retired"
-        varchar(7) valid_from_period "YYYY-MM start boundary"
-        varchar(7) valid_to_period "YYYY-MM retirement boundary"
-        int display_order "UI sort order"
+        bigint expense_id PK
+        int category_id FK
+        varchar expense_name
+        varchar expense_code UK
+        enum frequency_type
+        json applicable_months
+        varchar payment_channel
+        varchar payment_url
+        varchar account_reference
+        tinyint expected_due_day
+        decimal estimated_amount
+        boolean active_flag
+        varchar valid_from_period
+        varchar valid_to_period
+        int display_order
         datetime created_at
         datetime updated_at
     }
 
     EXPENSE_PAYMENT {
-        bigint payment_id PK "Auto Increment"
-        bigint expense_id FK "References EXPENSE_MASTER"
-        smallint expense_year "Expense Period Year (e.g., 2026)"
-        tinyint expense_month "Expense Period Month (1-12)"
-        date payment_date "Actual transaction date"
-        decimal amount "Amount in INR (> 0)"
-        varchar(100) reference_no "Transaction UTR / Receipt No"
-        varchar(500) notes "Optional remarks"
-        enum status "PAID, PENDING, SKIPPED"
+        bigint payment_id PK
+        bigint expense_id FK
+        smallint expense_year
+        tinyint expense_month
+        date payment_date
+        decimal amount
+        varchar reference_no
+        varchar notes
+        enum status
         datetime created_at
         datetime updated_at
     }
 ```
 
----
+## Relationships and constraints
 
-## 2. Table Specifications and Constraints
+### `expense_category`
 
-### Table: `expense_category`
-- **Purpose:** Groups related bills (e.g., Utilities, Insurances, Maintenance, Household).
-- **Primary Key:** `category_id` (`INT AUTO_INCREMENT`)
-- **Key Constraints:**
-  - `category_name`: `VARCHAR(100) NOT NULL UNIQUE`
+Optional grouping for dashboard rows. `category_name` is unique. Deleting a
+category sets `expense_master.category_id` to `NULL`.
 
-### Table: `expense_master`
-- **Purpose:** Stores configurable expense row metadata, dynamic recurrences, URLs, and payment criteria.
-- **Primary Key:** `expense_id` (`BIGINT AUTO_INCREMENT`)
-- **Foreign Key:** `category_id` references `expense_category(category_id)` on delete `SET NULL`.
-- **Key Constraints & Rules:**
-  - `frequency_type`: `ENUM('MONTHLY', 'BI_MONTHLY', 'QUARTERLY', 'SEMI_ANNUAL', 'ANNUAL', 'CUSTOM_MONTHS', 'AD_HOC') NOT NULL`
-  - `applicable_months`: Validated JSON array containing month integers ($1 \le m \le 12$).
-  - `active_flag`: Defaults to `TRUE`. When set to `FALSE`, the item is omitted from future months.
-  - `valid_from_period` / `valid_to_period`: Format `YYYY-MM`. Prevents deleted/retired items from polluting current views while retaining past associations.
+### `expense_master`
 
-### Table: `expense_payment`
-- **Purpose:** Transactional ledger of actual payments made.
-- **Primary Key:** `payment_id` (`BIGINT AUTO_INCREMENT`)
-- **Foreign Key:** `expense_id` references `expense_master(expense_id)` on delete `RESTRICT`.
-- **Key Constraints & Rules:**
-  - `uq_expense_period`: `UNIQUE KEY (expense_id, expense_year, expense_month)` ensures an expense cannot be paid twice for the same billing period without an explicit edit.
-  - `chk_expense_payment_amount`: `CHECK (amount > 0)`
-  - `chk_expense_payment_month`: `CHECK (expense_month BETWEEN 1 AND 12)`
-  - `idx_period_status`: Composite index on `(expense_year, expense_month, status)` for sub-millisecond monthly total computation.
+Stores the 43 seeded expense rows plus rows added through
+`POST /api/master/expenses`.
+
+- `frequency_type` is one of `MONTHLY`, `BI_MONTHLY`, `QUARTERLY`,
+  `SEMI_ANNUAL`, `ANNUAL`, `CUSTOM_MONTHS`, or `AD_HOC`.
+- `applicable_months` is a JSON array of calendar month numbers from 1 to 12.
+- `payment_channel` is intended for `WEB`, `APP`, `UPI`, `OFFLINE`, or `NA`.
+- `active_flag` is the current soft-delete flag.
+- `valid_from_period` and `valid_to_period` are available for period history,
+  but the current dashboard query only applies `active_flag`.
+
+### `expense_payment`
+
+Stores one payment per expense and expense period. The unique key on
+`(expense_id, expense_year, expense_month)` supports the payment upsert used
+by `POST /api/payments`. `amount > 0` and month 1..12 are enforced by database
+checks. `idx_period_status` supports monthly paid-total queries.
+
+## Seed data
+
+`schema.sql` seeds 43 items from the `Monthly-expenses` workbook sheet with
+categories, recurrence months, payment channels, URLs, references, display
+order, and default due days. The current frontend and backend load this data
+from MySQL; the frontend's static catalog is only a pre-API fallback/reference
+inside the generated UI source.
+
+## Current limitations
+
+- No workbook import table or migration history is defined.
+- Payment status is written as `PAID`; `PENDING` is a dashboard display state
+  when no payment exists, while `SKIPPED` exists in the enum but has no UI/API
+  action.
+- There is no audit-history table.
+- The schema grants the application user all privileges on the application
+  database for local setup. Production least-privilege hardening remains work.

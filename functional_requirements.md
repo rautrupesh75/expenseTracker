@@ -1,220 +1,108 @@
-# Personal Monthly Expense Tracker -- Functional & Technical Requirements
+# Personal Monthly Expense Tracker -- Functional Requirements
 
-## 1. Purpose and Scope
+This document describes the behavior delivered by the current generated
+frontend and backend. The application is a local personal-use tracker, not a
+banking automation tool.
 
-This document defines the functional and technical requirements for a generic, configurable local web application for personal expense and payment tracking.
+## 1. User workflow
 
-The application replaces manual spreadsheet tracking with a dynamic browser-based interface backed by a local MySQL relational database. The design eliminates hardcoded row items, fixed URLs, and static frequencies, allowing users to dynamically configure, add, reorder, modify, or deactivate expense rows at runtime without database migrations or code redeployment.
+1. Open the Vite frontend at `http://localhost:3000`.
+2. Sign in with the current demo credentials: `admin` / `password123`.
+3. Select a month with previous/next controls or the month picker.
+4. Review applicable expenses and their payment channel/reference.
+5. Record or edit a positive amount and actual payment date.
+6. Add optional notes and review the paid total at the bottom.
 
-- **Historical Source Workbook:** `OjasBills(1).xls` / `OjasBills.xls`
-- **Historical Source Sheet:** `Monthly-expenses` only
-- **Scope Boundary:** Individual expense items and payment logs only. Workbook summary/income/withdrawal sections (`SubTotal`, `Grand total`, `Withdrawals`, `Rental income`, `Gross Income`, `Net income`, `Investments`) are strictly excluded from the expense master and transactional imports.
+The backend must be running at `http://127.0.0.1:8000` and MySQL must contain
+the schema from `backend/schema.sql`.
 
----
+## 2. Delivered dashboard behavior
 
-## 2. Core Architecture & Dynamic Principles
+### FR-001 -- Period dashboard
 
-1. **Zero Hardcoded Items:** Expense names, categories, payment URLs, channels, and recurrence rules are fully data-driven.
-2. **Dynamic Row Management:** Users can add new expense items, modify existing criteria, or soft-delete/retire items without breaking past monthly logs.
-3. **Flexible Frequency Engine:** Evaluates recurrence dynamically using frequency types (`MONTHLY`, `BI_MONTHLY`, `QUARTERLY`, `SEMI_ANNUAL`, `ANNUAL`, `CUSTOM_MONTHS`, `AD_HOC`) and integer arrays for applicable calendar months.
-4. **Parameterized Payment Channels & Reference Data:** Supports Web links (`WEB`), Mobile Apps (`APP`), Direct UPI (`UPI`), and Offline (`NA`/`OFFLINE`), along with reference identifiers (Consumer numbers, Policy numbers, Card digits) accessible via UI tooltips.
-5. **Period-Based Historical Integrity:** Dynamic filtering evaluates `valid_from_period` and `valid_to_period`. Retiring an expense item removes it from future dashboards while preserving past records and historical totals.
+The dashboard displays active expenses applicable to the selected year/month:
+expense name, category, frequency, payment link/channel, amount, payment date,
+status, account reference, notes, and actions.
 
----
+### FR-002 -- Recurrence logic
 
-## 3. Database Schema Requirements (MySQL)
+- `MONTHLY` rows appear in every month.
+- Other scheduled frequencies appear when the selected month is in their JSON
+  `applicable_months` array.
+- `AD_HOC` rows appear after a payment exists for that period.
+- Inactive rows are excluded.
+- The current implementation does not yet filter by `valid_from_period` or
+  `valid_to_period`.
 
-Recommended database: `personal_expense_tracker`
+### FR-003 -- Payment capture
 
-The application shall run under a dedicated MySQL user account with least-privilege access (`SELECT`, `INSERT`, `UPDATE`, `DELETE`), strictly avoiding MySQL `root` or the system `sys` schema.
+- Amount must be a positive number in the current UI.
+- Payment date is entered with a date picker.
+- Save creates or updates one record for the selected expense period.
+- Saved records display `PAID`; rows without a record display `PENDING`.
+- The monthly total includes only saved records with status `PAID`.
+- Notes up to 500 characters are supported.
 
-### 3.1 Table: `expense_category`
-Provides optional grouping and visual organization on the dashboard.
+### FR-004 -- Payment links and references
 
-```sql
-CREATE TABLE expense_category (
-    category_id INT PRIMARY KEY AUTO_INCREMENT,
-    category_name VARCHAR(100) NOT NULL UNIQUE,
-    display_order INT NOT NULL DEFAULT 0,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
-```
+- `WEB` rows with a URL open in a new tab using `noopener noreferrer`.
+- `APP` rows show an app label without inventing a web URL.
+- `NA`/offline rows show no payment link.
+- Account references can be copied from the dashboard.
+- The application never enters banking passwords, PINs, CVVs, OTPs, or submits
+  payments.
 
-### 3.2 Table: `expense_master`
-Stores dynamic row configurations, recurrence rules, payment criteria, and display metadata.
+### FR-005 -- Search, filtering, and sorting
 
-```sql
-CREATE TABLE expense_master (
-    expense_id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    category_id INT NULL,
-    expense_name VARCHAR(150) NOT NULL,
-    expense_code VARCHAR(50) NULL UNIQUE,
-    frequency_type ENUM(
-        'MONTHLY',
-        'BI_MONTHLY',
-        'QUARTERLY',
-        'SEMI_ANNUAL',
-        'ANNUAL',
-        'CUSTOM_MONTHS',
-        'AD_HOC'
-    ) NOT NULL DEFAULT 'MONTHLY',
-    applicable_months JSON NULL COMMENT 'Array of calendar month numbers [1..12]',
-    payment_channel VARCHAR(50) NOT NULL DEFAULT 'NA' COMMENT 'WEB, APP, UPI, OFFLINE, NA',
-    payment_url VARCHAR(1000) NULL,
-    account_reference VARCHAR(100) NULL COMMENT 'Consumer ID, Policy No, Card digits',
-    expected_due_day TINYINT NULL COMMENT 'Expected due day of month (1-31)',
-    estimated_amount DECIMAL(12,2) NULL COMMENT 'Budget benchmark amount',
-    active_flag BOOLEAN NOT NULL DEFAULT TRUE,
-    valid_from_period VARCHAR(7) NULL COMMENT 'YYYY-MM; row hidden prior to this period',
-    valid_to_period VARCHAR(7) NULL COMMENT 'YYYY-MM; row retired after this period',
-    display_order INT NOT NULL DEFAULT 0,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    CONSTRAINT fk_expense_category FOREIGN KEY (category_id) REFERENCES expense_category(category_id) ON DELETE SET NULL
-);
-```
+The dashboard supports text search, category, frequency, and status filters,
+minimum/maximum amount filters, and sorting by name, category, frequency,
+amount, date, or status.
 
-### 3.3 Table: `expense_payment`
-Maintains normalized monthly transaction records.
+### FR-006 -- Expense master actions
 
-```sql
-CREATE TABLE expense_payment (
-    payment_id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    expense_id BIGINT NOT NULL,
-    expense_year SMALLINT NOT NULL,
-    expense_month TINYINT NOT NULL,
-    payment_date DATE NOT NULL,
-    amount DECIMAL(12,2) NOT NULL,
-    reference_no VARCHAR(100) NULL COMMENT 'Transaction ID, UTR, or Receipt No',
-    notes VARCHAR(500) NULL,
-    status ENUM('PAID', 'PENDING', 'SKIPPED') NOT NULL DEFAULT 'PAID',
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    CONSTRAINT fk_expense_payment_expense FOREIGN KEY (expense_id) REFERENCES expense_master(expense_id),
-    CONSTRAINT chk_expense_payment_amount CHECK (amount > 0),
-    CONSTRAINT chk_expense_payment_month CHECK (expense_month BETWEEN 1 AND 12),
-    UNIQUE KEY uq_expense_period (expense_id, expense_year, expense_month)
-);
-```
+The current UI can create a new expense row and deactivate an existing row.
+Deactivation preserves historical payment rows. Full master editing, reorder,
+restore, and configurable month selection are not yet exposed.
 
----
+### FR-007 -- Analytics and reports
 
-## 4. Functional Requirements
+The analytics tab can query selected months across a year range and shows total
+paid, average per selected month, paid-record count, spend by month, and spend
+by category. The dashboard can export selected periods as an Excel-compatible
+`.xls` file or a browser print-to-PDF report.
 
-### FR-001 -- Dynamic Monthly Dashboard
-- Provide a single-page responsive dashboard showing all expenses applicable to the selected month and year.
-- Columns: Expense Name, Category, Frequency, Channel/Payment Link, Amount Paid (INR), Payment Date, Status (`PAID`, `PENDING`, `SKIPPED`), and Actions (`Save`, `Edit`, `Skip`).
-- Render total monthly expenses at the bottom, computed strictly from database records.
+## 3. Initial catalog
 
-### FR-002 -- Month & Period Navigation
-- Month navigation controls: `[ < ] Month YYYY [ > ]`, defaulting to the current calendar month.
-- Changing the month dynamically queries and renders only the items active and due in that period.
+The database seeds 43 rows from the `Monthly-expenses` sheet:
 
-### FR-003 -- Dynamic Recurrence & Period Evaluator
-For a selected year ($Y$) and month ($M$):
-1. Include items where `active_flag = TRUE`.
-2. Ensure $Y\text{-}M$ falls within `[valid_from_period, valid_to_period]`.
-3. Filter by frequency rule:
-   - `MONTHLY`: Include for months 1 through 12.
-   - `QUARTERLY`, `SEMI_ANNUAL`, `ANNUAL`, `CUSTOM_MONTHS`: Include if $M \in \text{applicable\_months}$.
-   - `AD_HOC`: Include if an explicit transaction already exists for $(Y, M)$ or if the user manually adds an ad-hoc row for that month.
+| Group | Items |
+|---|---|
+| Monthly | TATA CC; HDFC CC; Gpay; Phone / data bill; Lodha power bill; SK home power bill; Ojas power; SK MGL; Ojas MGL; Lodha FDS CMS; Food card; Sakshi PM; Pratham Pocket money; Jeetu sir; Avnish sir; Aniket sir; Misc; MF -- SIP; SK power bill; SK BMC Water |
+| Feb/May/Aug/Nov | SK Maintanance; Ojas Maintanance; Lodha Maintanance |
+| Aug/Sep | SK Property tax; Ojas Property tax; Lodha Property tax |
+| Annual | HDFC Premium 1 (Apr); HDFC Premium 2 (Dec); HSBC Insurance (Mar); LIC Premium 2 (Jul); LIC Premium 3 (Sep); Pulsar Insurance (May); Activa Insurance (Jun); Car Insurance (Aug); PPF - Rupesh (Jan); PPF - Pratika (Feb); PPF - Sakshi (Mar); PPF - Pratham (Mar) |
+| Semi-annual | Pratham fees (Jul/Dec) |
+| Ad hoc | LIC Premium 1; Sakshi fees; Phone claim; Data claim |
 
-### FR-004 -- Dynamic Item Management (Admin CRUD)
-- **Create:** Add new expense items with custom frequencies, URLs, channels, and accounts.
-- **Update:** Edit names, target URLs, channels, and month sets.
-- **Deactivate/Soft Delete:** Retiring an item sets `active_flag = FALSE` and `valid_to_period = YYYY-MM`. Past payments remain unaltered.
-- **Reorder:** Update numeric display order to customize visual grouping.
+The supplied spelling `Maintanance` is retained in the seeded logical names.
 
-### FR-005 -- Payment Actions and Deep Linking
-- If `payment_channel = 'WEB'` and `payment_url` is present, display a `[Pay]` action opening the URL in a new browser tab with `rel="noopener noreferrer"`.
-- If `payment_channel = 'APP'`, display the application name badge (e.g., `MyGate App`).
-- If `payment_channel = 'NA'` or `'OFFLINE'`, show an offline badge; do not render broken links.
-- Render account reference numbers (e.g., consumer number, credit card last 4 digits) with a quick one-click copy button.
+## 4. Source workbook scope
 
-### FR-006 -- Amount and Date Entry
-- Validate positive decimal amounts (`DECIMAL(12,2)`).
-- Provide a standard date picker for the actual payment date.
-- Default payment date to current date when entering new payments.
+The source is `OjasBills(1).xls` / `OjasBills.xls`, sheet
+`Monthly-expenses` only. Summary, income, withdrawal, and investment rows such
+as `SubTotal`, `Grand total`, `Withdrawals`, `Rental income`, `Gross Income`,
+`Net income`, and `Investments` are not expense rows.
 
-### FR-007 -- Monthly Expense Aggregation
-- Compute monthly total via:
-  ```sql
-  SELECT COALESCE(SUM(amount), 0) AS monthly_total
-  FROM expense_payment
-  WHERE expense_year = ? AND expense_month = ? AND status = 'PAID';
-  ```
-- Updating any row updates the displayed total in real time.
+Historical workbook import is a documented requirement but is not present in
+the current generated code. The Python dependencies include spreadsheet
+libraries, but no importer command or API has been implemented.
 
----
+## 5. Validation and security requirements
 
-## 5. Initial Seed Catalog (43 Items from Workbook)
-
-The 43 rows identified from the `Monthly-expenses` sheet are seeded into `expense_master` as initial configurations:
-
-| # | Expense Name | Frequency Type | Applicable Months | Channel | URL / Payment Reference |
-|---|--------------|----------------|-------------------|---------|--------------------------|
-| 1 | TATA CC | `MONTHLY` | `[1,2,3,4,5,6,7,8,9,10,11,12]` | WEB | `https://www.tatacard.com/creditcards/app/user/login` |
-| 2 | HDFC CC | `MONTHLY` | `[1,2,3,4,5,6,7,8,9,10,11,12]` | WEB | `https://www.hdfc.bank.in/ways-to-bank/digital-banking/online-banking/netbanking` |
-| 3 | Gpay | `MONTHLY` | `[1,2,3,4,5,6,7,8,9,10,11,12]` | APP | Google Pay |
-| 4 | Phone / data bill | `MONTHLY` | `[1,2,3,4,5,6,7,8,9,10,11,12]` | WEB | `https://www.hdfc.bank.in/ways-to-bank/digital-banking/online-banking/netbanking` |
-| 5 | Lodha power bill | `MONTHLY` | `[1,2,3,4,5,6,7,8,9,10,11,12]` | NA | NA |
-| 6 | SK home power bill | `MONTHLY` | `[1,2,3,4,5,6,7,8,9,10,11,12]` | WEB | `https://onlinesbi.sbi.bank.in/` |
-| 7 | Ojas power | `MONTHLY` | `[1,2,3,4,5,6,7,8,9,10,11,12]` | WEB | `https://www.adanione.com/bill-payment` |
-| 8 | SK MGL | `MONTHLY` | `[1,2,3,4,5,6,7,8,9,10,11,12]` | WEB | `https://onlinesbi.sbi.bank.in/` |
-| 9 | Ojas MGL | `MONTHLY` | `[1,2,3,4,5,6,7,8,9,10,11,12]` | NA | NA |
-| 10 | Lodha FDS CMS | `MONTHLY` | `[1,2,3,4,5,6,7,8,9,10,11,12]` | APP | MyGate App |
-| 11 | SK Maintanance | `QUARTERLY` | `[2, 5, 8, 11]` | WEB | `https://onlinesbi.sbi.bank.in/` |
-| 12 | Ojas Maintanance | `QUARTERLY` | `[2, 5, 8, 11]` | WEB | `https://onlinesbi.sbi.bank.in/` |
-| 13 | Lodha Maintanance | `QUARTERLY` | `[2, 5, 8, 11]` | APP | MyGate App |
-| 14 | SK Property tax | `CUSTOM_MONTHS` | `[8, 9]` | WEB | `https://ptaxportal.mcgm.gov.in/CitizenPortal/#/login` |
-| 15 | Ojas Property tax | `CUSTOM_MONTHS` | `[8, 9]` | WEB | `https://ptaxportal.mcgm.gov.in/CitizenPortal/#/login` |
-| 16 | Lodha Property tax | `CUSTOM_MONTHS` | `[8, 9]` | WEB | `https://kdmc.gov.in/kdmc/CitizenHome.html` |
-| 17 | Food card | `MONTHLY` | `[1,2,3,4,5,6,7,8,9,10,11,12]` | NA | NA |
-| 18 | Sakshi PM | `MONTHLY` | `[1,2,3,4,5,6,7,8,9,10,11,12]` | NA | NA |
-| 19 | Pratham Pocket money | `MONTHLY` | `[1,2,3,4,5,6,7,8,9,10,11,12]` | NA | NA |
-| 20 | Jeetu sir | `MONTHLY` | `[1,2,3,4,5,6,7,8,9,10,11,12]` | NA | NA |
-| 21 | Avnish sir | `MONTHLY` | `[1,2,3,4,5,6,7,8,9,10,11,12]` | NA | NA |
-| 22 | Aniket sir | `MONTHLY` | `[1,2,3,4,5,6,7,8,9,10,11,12]` | NA | NA |
-| 23 | Misc | `MONTHLY` | `[1,2,3,4,5,6,7,8,9,10,11,12]` | NA | NA |
-| 24 | MF -- SIP | `MONTHLY` | `[1,2,3,4,5,6,7,8,9,10,11,12]` | NA | NA |
-| 25 | HDFC Premium 1 | `ANNUAL` | `[4]` | NA | NA |
-| 26 | HDFC Premium 2 | `ANNUAL` | `[12]` | NA | NA |
-| 27 | LIC Premium 1 | `AD_HOC` | `[]` | NA | NA |
-| 28 | HSBC Insurance | `ANNUAL` | `[3]` | NA | NA |
-| 29 | LIC Premium 2 | `ANNUAL` | `[7]` | NA | NA |
-| 30 | LIC Premium 3 | `ANNUAL` | `[9]` | NA | NA |
-| 31 | Pulsar Insurance | `ANNUAL` | `[5]` | NA | NA |
-| 32 | Activa Insurance | `ANNUAL` | `[6]` | NA | NA |
-| 33 | Car Insurance | `ANNUAL` | `[8]` | NA | NA |
-| 34 | PPF - Rupesh | `ANNUAL` | `[1]` | NA | NA |
-| 35 | PPF - Pratika | `ANNUAL` | `[2]` | NA | NA |
-| 36 | PPF - Sakshi | `ANNUAL` | `[3]` | NA | NA |
-| 37 | PPF - Pratham | `ANNUAL` | `[3]` | NA | NA |
-| 38 | Sakshi fees | `AD_HOC` | `[]` | NA | NA |
-| 39 | Pratham fees | `SEMI_ANNUAL` | `[7, 12]` | NA | NA |
-| 40 | Phone claim | `AD_HOC` | `[]` | NA | NA |
-| 41 | Data claim | `AD_HOC` | `[]` | NA | NA |
-| 42 | SK power bill | `MONTHLY` | `[1,2,3,4,5,6,7,8,9,10,11,12]` | WEB | `https://pgi.billdesk.com/pgidsk/pgmerc/tatapwr/TATAPWRDetails.jsp` |
-| 43 | SK BMC Water | `MONTHLY` | `[1,2,3,4,5,6,7,8,9,10,11,12]` | WEB | `https://aquaptax.mcgm.gov.in/aqua/CitizenHome.html` |
-
----
-
-## 6. One-Time Historical Data Import Utility
-
-The application includes an automated migration utility that reads the historical `Monthly-expenses` sheet:
-1. Matches row headers with `expense_master` records.
-2. Iterates horizontally across month/year column pairs (e.g., `Jul-26 Amt`, `Jul-26 Dt`).
-3. Normalizes non-empty date and amount pairs into rows in `expense_payment`.
-4. Ignores empty/unpaid periods.
-5. Ignores summary/subtotal/income/investment rows.
-6. Employs `INSERT ... ON DUPLICATE KEY UPDATE` to ensure idempotency.
-
----
-
-## 7. Non-Functional & Security Requirements
-
-- **Security:** Zero credential storage for banking pins, CVVs, passwords, or OTPs. No direct MySQL exposure to web clients.
-- **Local Isolation:** All APIs and databases run on `localhost` (`127.0.0.1`).
-- **Configuration:** Database credentials loaded strictly from local `.env` variables.
-- **Data Integrity:** Foreign keys and unique constraints guarantee that an expense cannot have duplicate conflicting payments for the same period.
+- Browser calls go through the backend; the browser never connects directly to
+  MySQL.
+- Database settings are loaded from local environment variables.
+- The schema uses foreign keys, positive-amount checks, valid-month checks, and
+  one payment per expense period.
+- Current gaps: API-level validation is incomplete, demo credentials are in
+  source, CORS is permissive, and authentication tokens are not enforced.
