@@ -1,0 +1,73 @@
+As an experienced Enterprise DBA expert guide any layman with screenshots if possible to make it easy to explain step by step using MySQL Workbench client interface, explain below tasks - 
+1. To enable MySQL DB 5.6 server logs to trace all user audit activities systematically in a very simple manner.
+2. How to create user  by admin with restricted / readonly / view access for a particular schema or a table, moreover import /export rights should also be restricted, also create its script to create such a user as decribed above.
+
+
+SELECT c.User, c.Host, c.Db, c.Table_name, c.Column_name FROM mysql.columns_priv AS c LEFT JOIN mysql.user AS u ON c.User = u.user AND c.Host = u.Host WHERE u.User IS NULL
+
+-------------------------
+Create requirements MD file of following functional requirements for individual personal usage - 
+Create simple web app for personal usage with following features
+Refer to only - 'Monthly-expenses' sheet
+The row items represents monthly / quarterly expenses as per frequency mentioned below, the users will enter amount & date of payment made
+Interface should take inputs from the users on front end  
+It should store into backend MySQL DB in proper tables running on local - root DB & sys schema
+Total monthly expenses should appear at the bottom of the page
+The urls for making payments for each row items are as follows - 
+TATA CC  - https://www.tatacard.com/creditcards/app/user/login
+HDFC CC - https://www.hdfc.bank.in/ways-to-bank/digital-banking/online-banking/netbanking
+Gpay -NA
+Phone / data  bill - https://www.hdfc.bank.in/ways-to-bank/digital-banking/online-banking/netbanking
+Lodha power bill - NA
+SK home power bill - https://onlinesbi.sbi.bank.in/
+Ojas power - https://www.adanione.com/bill-payment
+SK MGL - https://onlinesbi.sbi.bank.in/
+Ojas MGL - NA
+Lodha FDS CMS - MyGate App
+SK Maintanance - (Frequency Feb, May, Aug, Nov) https://onlinesbi.sbi.bank.in/
+Ojas Maintanance - (Frequency Feb, May, Aug, Nov) https://onlinesbi.sbi.bank.in/
+Lodha Maintanance -  (Frequency Feb, May, Aug, Nov) MyGate App
+SK Property tax -(Frequency Aug / Sep) https://ptaxportal.mcgm.gov.in/CitizenPortal/#/login
+Ojas Property tax - (Frequency Aug / Sep)https://ptaxportal.mcgm.gov.in/CitizenPortal/#/login
+Lodha Property tax - (Frequency Aug / Sep)https://kdmc.gov.in/kdmc/CitizenHome.html
+Food card - NA
+Sakshi PM - NA
+Pratham Pocket money - NA
+Jeetu sir - NA
+Avnish sir - NA
+Aniket sir - NA
+Misc - NA
+MF – SIP
+HDFC Premium 1 - April month
+HDFC Premium 2 - December month
+LIC Premium 1 - NA
+HSBC Insurance - March month
+LIC Premium 2 - July
+LIC Premium 3 - September month
+Pulsar Insurance - May month
+Activa Insurance - June month
+Car Insurance - August month
+PPF - Rupesh - January month
+PPF - Pratika - Feb month
+PPF - Sakshi - Mar month
+PPF - Pratham - Mar month
+Sakshi fees - NA
+Pratham fees - July & December
+Phone  claim  - NA
+Data  claim  - NA
+SK power bill - https://pgi.billdesk.com/pgidsk/pgmerc/tatapwr/TATAPWRDetails.jsp
+SK BMC Water - https://aquaptax.mcgm.gov.in/aqua/CitizenHome.html
+
+cd backend
+python -m venv venv
+# Windows: venv\Scripts\activate | macOS/Linux: source venv/bin/activate
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
+
+cd frontend
+npm install
+npm run dev
+
+Access Application: Open http://localhost:3000 (Demo Login: admin / password123).
+
+"I cannot click the sandbox link. Please re-generate the personal-monthly-expense-tracker.zip file using your Python code tool so that it provides a clickable, live download link in the chat interface."
